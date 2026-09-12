@@ -1,6 +1,7 @@
 """Opt-in, read-only receiver for WiVRn's bounded NXTP datagrams."""
 from collections import deque
 import math
+import numbers
 import os
 from pathlib import Path
 import socket
@@ -107,6 +108,72 @@ class TrackingReceiver:
                 self._records[joint] = record
                 self._history.setdefault(joint, deque(maxlen=120)).append(record)
 
+    @staticmethod
+    def _rotate(q, v):
+        x, y, z, w = q
+        vx, vy, vz = v
+        # q * (v, 0) * conjugate(q), expanded.
+        tx = 2 * (y * vz - z * vy)
+        ty = 2 * (z * vx - x * vz)
+        tz = 2 * (x * vy - y * vx)
+        return [vx + w * tx + y * tz - z * ty,
+                vy + w * ty + z * tx - x * tz,
+                vz + w * tz + x * ty - y * tx]
+
+    def stable_anchor(self, joint, frame_time_ns, offset):
+        """Return a quiet, tracked pose close to a camera arrival time."""
+        if joint not in {'head', 'left_hand', 'right_hand'}:
+            raise ValueError('invalid anchor joint')
+        if isinstance(frame_time_ns, bool) or not isinstance(frame_time_ns, numbers.Integral):
+            raise ValueError('invalid frame time')
+        if (isinstance(offset, (str, bytes)) or not hasattr(offset, '__len__')
+                or len(offset) != 3):
+            raise ValueError('invalid offset')
+        if any(isinstance(value, bool) or not isinstance(value, numbers.Real)
+               or not math.isfinite(value) or abs(value) > 0.5 for value in offset):
+            raise ValueError('invalid offset')
+        now = time.monotonic_ns()
+        if frame_time_ns > now + 20_000_000 or now - frame_time_ns > 250_000_000:
+            raise ValueError('frame time must be recent')
+        with self._lock:
+            generation = str(self._generation)
+            history = list(self._history.get(joint, ()))
+        lower, upper = frame_time_ns - 400_000_000, frame_time_ns + 60_000_000
+        samples = [record for record in history
+                   if lower <= record['sample_time_ns'] <= upper]
+        if len(samples) < 4:
+            raise ValueError('missing anchor history; hold still for 400ms')
+        samples.sort(key=lambda record: record['sample_time_ns'])
+        if samples[-1]['sample_time_ns'] - samples[0]['sample_time_ns'] < 300_000_000:
+            raise ValueError('missing 400ms anchor history; hold still')
+        if any(record['flags'] & 0x33 != 0x33 for record in samples):
+            raise ValueError('anchor tracking invalid; hold still')
+        nearest = min(samples, key=lambda record: abs(record['sample_time_ns'] - frame_time_ns))
+        if abs(nearest['sample_time_ns'] - frame_time_ns) > 60_000_000:
+            raise ValueError('anchor sample too far from frame; hold still')
+        normalized = []
+        for record in samples:
+            q = record['orientation']
+            qnorm = math.sqrt(sum(value * value for value in q))
+            if not 0.95 <= qnorm <= 1.05:
+                raise ValueError('anchor orientation invalid; hold still')
+            q = [value / qnorm for value in q]
+            normalized.append((record['position'], q))
+        for index, (position, quaternion) in enumerate(normalized):
+            for other_position, other_quaternion in normalized[index + 1:]:
+                if math.dist(position, other_position) > 0.01:
+                    raise ValueError('anchor moved; hold still for 400ms')
+                dot = abs(sum(a * b for a, b in zip(quaternion, other_quaternion)))
+                if 2 * math.acos(min(1.0, dot)) > math.radians(2):
+                    raise ValueError('anchor rotated; hold still for 400ms')
+        q = nearest['orientation']
+        qnorm = math.sqrt(sum(value * value for value in q))
+        q = [value / qnorm for value in q]
+        position = [a + b for a, b in zip(nearest['position'], self._rotate(q, offset))]
+        return {'position': position, 'generation': generation,
+                'sample_time_ns': int(nearest['sample_time_ns']),
+                'match_error_ms': abs(nearest['sample_time_ns'] - frame_time_ns) / 1e6}
+
     def _run(self):
         while not self._stop.is_set():
             try:
@@ -123,7 +190,8 @@ class TrackingReceiver:
     def snapshot(self):
         now = time.monotonic_ns()
         with self._lock:
-            records = [{**record, 'age_ms': max(0, (now - record['host_time_ns']) / 1e6)}
+            records = [{**{key: value for key, value in record.items() if not key.startswith('_')},
+                        'age_ms': max(0, (now - record['host_time_ns']) / 1e6)}
                        for record in self._records.values() if now - record['host_time_ns'] <= 500_000_000]
             return {'enabled': True, 'connected': bool(records), 'read_only': True,
                     'generation': str(self._generation), 'sequence': str(self._sequence),

@@ -17,6 +17,8 @@ class _Stream:
     jpeg: bytes | None = None
     sequence: int = 0
     last_frame: float = 0.0
+    epoch: int = field(default_factory=time.monotonic_ns)
+    image_size: tuple = ()
     error: str | None = None
     estimation: bool = False
     model_path: str = ''
@@ -110,7 +112,8 @@ class CameraManager:
         live = bool(stream and not stream.stop.is_set() and not stream.error)
         stale = bool(stream and stream.sequence and time.monotonic() - stream.last_frame > 2)
         return {**item, 'streaming': live,
-                'frame_stale': stale,
+                'frame_stale': stale, 'epoch': str(stream.epoch) if stream else '',
+                'image_size': stream.image_size if stream else (),
                 'sequence': stream.sequence if stream else 0,
                 'error': stream.error if stream else None,
                 'estimation': bool(live and stream.estimation),
@@ -174,6 +177,8 @@ class CameraManager:
                         stream.jpeg = encoded
                         stream.sequence += 1
                         stream.last_frame = captured_at
+                        shape = getattr(frame, "shape", ())
+                        stream.image_size = (int(shape[1]), int(shape[0])) if len(shape) >= 2 else ()
                         if enabled:
                             stream.estimate = None if result is None else {
                                 'landmarks': list(result.landmarks)[:33],
@@ -276,6 +281,17 @@ class CameraManager:
             stream = self._streams.get(device_id)
             return stream.jpeg if (stream and not stream.stop.is_set() and not stream.error
                                    and time.monotonic() - stream.last_frame <= 2) else None
+
+    def frame_snapshot(self, device_id):
+        """Atomically pair a raw JPEG with its host arrival time and stream identity."""
+        with self._lock:
+            stream = self._streams.get(device_id)
+            if (not stream or stream.stop.is_set() or stream.error or stream.estimation
+                    or not stream.jpeg or time.monotonic() - stream.last_frame > .25):
+                raise ValueError('Start camera, disable estimation, and wait for a fresh frame')
+            return {'jpeg': stream.jpeg, 'time_ns': round(stream.last_frame * 1e9),
+                    'sequence': stream.sequence, 'epoch': str(stream.epoch),
+                    'image_size': stream.image_size}
 
     def set_estimation(self, device_id: str, enabled: bool) -> dict:
         with self._lock:

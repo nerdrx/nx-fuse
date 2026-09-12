@@ -3,7 +3,7 @@
 Performed 2026-09-12 on the development Linux host. These are functional
 checks, not evidence of improved tracking accuracy or VR performance.
 
-- Python suite: 37 checks pass in the camera environment. Fusion/replay cover
+- Python suite: 49 checks pass in the camera environment. Fusion/replay cover
   stale/future/nonfinite/malformed observations, source disagreement, exact
   fallback expiry, protected head/hands and camera-only missing joints.
 - Fake camera tests cover explicit capture, latest JPEG, duplicate start,
@@ -40,6 +40,17 @@ checks, not evidence of improved tracking accuracy or VR performance.
 - The tracking-lab launcher test verifies that its owned worker stops and
   removes its socket when a fake dashboard exits. Native headless inspection
   displayed an explicitly synthetic tap packet and expanded lens controls.
+
+- Spatial alignment tests cover a known rotated/distorted camera, inverse
+  transform, behind-camera rejection, degenerate samples and held-out bad clicks.
+  Workflow/HTTP checks cover frozen tokens, bounded image selection, camera/lens/
+  generation invalidation and pose collection using the actual receiver history.
+- Anchor history tests cover stationary timing, measured quaternion offsets,
+  motion/rotation rejection, invalid tracking and recenter. Camera tests verify
+  atomic JPEG/sequence/arrival metadata and restart identity.
+- Headless native alignment UI used a labeled synthetic camera fixture: freeze
+  displayed its JPEG, a letterbox click was rejected, and clicking its reference
+  added exactly one sample. No physical camera was opened for this check.
 
 Earlier web-console checks covered desktop/mobile layout, assisted and
 camera-only simulation, occlusion, and front/side debug views.

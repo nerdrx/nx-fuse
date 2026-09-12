@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from fusion import Fusion, Observation, camera_only
 from camera import CameraManager, enumerate_devices
 from lens_setup import LensSetup
+from alignment_setup import AlignmentSetup
 
 ROOT = Path(__file__).resolve().parent
 
@@ -31,6 +32,7 @@ class Simulation:
         self.camera_manager = camera_manager or CameraManager()
         self.tracking_receiver = tracking_receiver
         self.lens_setup = LensSetup()
+        self.alignment_setup = AlignmentSetup(self.camera_manager, self.lens_setup, tracking_receiver)
 
     def tick(self):
         now = time.monotonic()
@@ -99,6 +101,16 @@ def make_handler(sim):
             if self.path == '/api/tracking':
                 return self.send(200, sim.tracking_receiver.snapshot() if sim.tracking_receiver else
                                  {'enabled':False, 'connected':False, 'read_only':True, 'records':[]})
+            if self.path == '/api/alignment':
+                return self.send(200, sim.alignment_setup.snapshot())
+            if self.path == '/api/alignment/profile':
+                profile = sim.alignment_setup.snapshot()['profile']
+                return self.send(200, profile, filename='nx-fuse-alignment.json') if profile else self.send(404, {'error':'No alignment profile'})
+            if self.path.startswith('/api/alignment/frame?'):
+                from urllib.parse import parse_qs, urlparse
+                token = parse_qs(urlparse(self.path).query).get('token', [''])[0]
+                frame = sim.alignment_setup.frame(token)
+                return self.send(200, frame, 'image/jpeg') if frame else self.send(404, {'error':'Frozen frame expired'})
             if self.path == '/api/calibration':
                 return self.send(200, sim.lens_setup.snapshot())
             if self.path == '/api/calibration/profile':
@@ -119,13 +131,16 @@ def make_handler(sim):
         def do_POST(self):
             if not self.allowed():
                 return self.send(403, {'error':'Local requests only'})
-            if self.path == '/api/calibration':
+            if self.path in ('/api/calibration', '/api/alignment'):
                 try:
                     size = int(self.headers.get('Content-Length', '0'))
                     if not 0 < size <= 1024: raise ValueError('Invalid request size')
                     value = json.loads(self.rfile.read(size))
                     if not isinstance(value, dict): raise ValueError('Expected calibration command')
-                    sim.lens_setup.command(value, sim.camera_manager)
+                    if self.path == '/api/alignment':
+                        sim.alignment_setup.command(value)
+                    else:
+                        sim.lens_setup.command(value, sim.camera_manager)
                     return self.send(200, {'ok':True})
                 except (ValueError, RuntimeError, KeyError) as exc:
                     return self.send(400, {'error':str(exc)})

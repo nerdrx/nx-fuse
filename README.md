@@ -66,7 +66,9 @@ The [tracking lab guide](docs/TRACKING-TAP.md) launches the worker before
 WiVRn so the optional raw-pose feed is ready. The native camera panel now has
 [lens setup](docs/LENS-CALIBRATION.md): collect varied chessboard views, solve
 intrinsics/distortion, inspect held-out error and export the profile. These
-steps do not yet align the camera to VR or apply live corrections.
+tools now lead into [spatial alignment](docs/SPATIAL-ALIGNMENT.md): match a
+visible headset/controller reference to its tracked pose across varied captures.
+Exported camera-to-VR transforms remain separate from live correction.
 
 ## What works now
 
@@ -87,7 +89,8 @@ steps do not yet align the camera to VR or apply live corrections.
 - Deterministic JSONL replay and automated tests covering fusion and local API behavior.
 - Read-only WiVRn packet tap and native raw-pose inspector for anchors, BD
   joints and generic HTC trackers; hardware validation is still pending.
-- Native chessboard lens setup with held-out reprojection checks and profile export.
+- Native chessboard lens setup and headset/controller camera alignment, with
+  held-out reprojection checks and profile export.
 
 ## What remains
 
@@ -103,7 +106,7 @@ The current one-camera path provides MediaPipe 2D landmarks and hip-relative
 inferred 3D coordinates. Read the sourced [monocular research plan](docs/MONOCULAR.md).
 The estimate is uncalibrated to VR and is not measured camera depth.
 
-Real tracker injection, camera-to-VR calibration, historical time alignment,
+Real tracker injection, calibrated monocular body depth, moving-frame time alignment,
 person association for live correction, and hardware evaluation remain future
 work. The simulation averages already-calibrated positions; it does **not**
 implement the planned latency-aligned residual pipeline. There is no measured
@@ -111,7 +114,7 @@ tracking improvement yet.
 
 Read the [milestones and acceptance gates](docs/PLAN.md) before enabling live
 output. The next hardware milestone is validating the read-only tap in the
-linked WiVRn NX build before camera-to-VR alignment and shadow correction.
+linked WiVRn NX build and measuring physical camera alignment before shadow correction.
 
 ## Develop and replay
 

@@ -65,6 +65,28 @@ class CameraTests(unittest.TestCase):
         self.assertFalse(self.manager.status('cam-a')['streaming'])
         self.assertTrue(self.capture.closed)
 
+    def test_atomic_alignment_frame_metadata_and_restart(self):
+        from types import SimpleNamespace
+        original_read = self.capture.read
+        self.capture.read = lambda: (original_read()[0], SimpleNamespace(shape=(480,640,3), count=self.capture.count))
+        self.manager._jpeg_encoder = lambda frame: str(frame.count).encode()
+        self.manager.set_enabled('cam-a', True)
+        for _ in range(100):
+            if self.manager.frame('cam-a'): break
+            time.sleep(.002)
+        snapshot = self.manager.frame_snapshot('cam-a')
+        self.assertEqual(int(snapshot['jpeg']), snapshot['sequence'])
+        self.assertEqual(snapshot['image_size'], (640,480))
+        self.assertLess(abs(time.monotonic_ns()-snapshot['time_ns']),250_000_000)
+        with self.manager._lock:
+            self.manager._streams['cam-a'].estimation=True
+        with self.assertRaises(ValueError): self.manager.frame_snapshot('cam-a')
+        self.manager.stop('cam-a')
+        with self.assertRaises(ValueError): self.manager.frame_snapshot('cam-a')
+        self.capture = FakeCapture()
+        self.manager.set_enabled('cam-a',True)
+        self.assertNotEqual(self.manager.status('cam-a')['epoch'], snapshot['epoch'])
+
     def test_http_control_and_latest_frame(self):
         sim = Simulation(self.manager); sim.tick()
         server = ThreadingHTTPServer(('127.0.0.1', 0), make_handler(sim))

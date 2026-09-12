@@ -17,9 +17,9 @@ why a joint fell back, and how to return to Pico instantly.
 
 The native dashboard, optional camera pose observation, lens-calibration tools
 and a read-only WiVRn packet tap are implemented. Synthetic fusion remains
-separate from camera and tracker observations. Lens calibration is not yet a
-camera-to-VR alignment workflow; no measured tracking improvement or live
-correction is claimed. See `VALIDATION.md` for functional checks and
+separate from camera and tracker observations. Native camera-to-VR alignment now matches manually selected headset/controller
+references to stationary tracked poses, with held-out reprojection checks.
+No measured tracking improvement or live correction is claimed. See `VALIDATION.md` for functional checks and
 `TRACKING-TAP.md` for the read-only transport.
 
 ## Architecture
@@ -154,6 +154,6 @@ inspector are available. Remaining debugging and alignment work includes:
 Read live negotiated body type and tracker roles; inventory connected
 cameras without enabling capture; select one room view and measure its
 latency. Validate the implemented read-only WiVRn pose tap with the headset, then
-align cameras to VR and run shadow trials. Only apply live corrections after those
+validate physical camera-to-VR alignment and run shadow trials. Only apply live corrections after those
 trials show improvement. A useful first demo is one visible hip whose
 position is steadier while its raw Pico fallback survives camera unplugging.
