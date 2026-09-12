@@ -126,6 +126,55 @@ class TrackingTests(unittest.TestCase):
                     receiver.stable_anchor('head', frame, (0, 0, 0))
             finally:
                 receiver.close()
+
+    def test_history_snapshot_uses_requested_time_and_copies_records(self):
+        now = time.monotonic_ns()
+        frame = now - 100_000_000
+        with tempfile.TemporaryDirectory() as folder:
+            receiver = TrackingReceiver(Path(folder) / 'tracking.sock')
+            try:
+                receiver._accept(decode_packet(packet(1, now=frame - 50_000_000, role=1,
+                                                      value=1, flags=0x33), now))
+                receiver._accept(decode_packet(packet(2, now=frame - 10_000_000, role=1,
+                                                      value=2, flags=0x33), now))
+                receiver._accept(decode_packet(packet(3, now=frame - 20_000_000, role=10,
+                                                      value=3, flags=0x11), now))
+                snapshot = receiver.history_snapshot(frame)
+                head = next(record for record in snapshot['records'] if record['joint'] == 'head')
+                self.assertEqual(head['sample_time_ns'], frame - 10_000_000)
+                self.assertEqual(head['position'], [2, 1, 0])
+                self.assertEqual(head['match_error_ms'], 10)
+                head['position'][0] = 99
+                self.assertEqual(receiver._records['head']['position'][0], 2)
+            finally:
+                receiver.close()
+
+    def test_history_snapshot_rejects_missing_head_invalid_and_stale(self):
+        now = time.monotonic_ns()
+        frame = now - 100_000_000
+        for flags, quaternion, expected in ((0x11, (0, 0, 0, 1), 'head'),
+                                             (0x33, (0, 0, 0, 2), 'orientation')):
+            with tempfile.TemporaryDirectory() as folder:
+                receiver = TrackingReceiver(Path(folder) / 'tracking.sock')
+                try:
+                    receiver._accept(decode_packet(packet(1, now=frame, role=1, flags=flags,
+                                                          quaternion=quaternion), now))
+                    with self.assertRaisesRegex(ValueError, expected):
+                        receiver.history_snapshot(frame)
+                finally:
+                    receiver.close()
+        with tempfile.TemporaryDirectory() as folder:
+            receiver = TrackingReceiver(Path(folder) / 'tracking.sock')
+            try:
+                receiver._accept(decode_packet(packet(1, now=frame, role=1, flags=0x33), now))
+                with self.assertRaisesRegex(ValueError, 'recent'):
+                    receiver.history_snapshot(now - 501_000_000)
+                receiver._accept(decode_packet(packet(2, generation=2, now=now,
+                                                      role=10, flags=0x11), now))
+                with self.assertRaisesRegex(ValueError, 'head'):
+                    receiver.history_snapshot(now)
+            finally:
+                receiver.close()
         frame = time.monotonic_ns() - 20_000_000
         with tempfile.TemporaryDirectory() as folder:
             receiver = TrackingReceiver(Path(folder) / 'tracking.sock')

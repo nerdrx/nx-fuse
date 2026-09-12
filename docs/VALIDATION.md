@@ -3,7 +3,7 @@
 Performed 2026-09-12 on the development Linux host. These are functional
 checks, not evidence of improved tracking accuracy or VR performance.
 
-- Python suite: 49 checks pass in the camera environment. Fusion/replay cover
+- Python suite: 65 checks pass in the camera environment. Fusion/replay cover
   stale/future/nonfinite/malformed observations, source disagreement, exact
   fallback expiry, protected head/hands and camera-only missing joints.
 - Fake camera tests cover explicit capture, latest JPEG, duplicate start,
@@ -51,6 +51,24 @@ checks, not evidence of improved tracking accuracy or VR performance.
 - Headless native alignment UI used a labeled synthetic camera fixture: freeze
   displayed its JPEG, a letterbox click was rejected, and clicking its reference
   added exactly one sample. No physical camera was opened for this check.
+
+- Shadow body tests exercise known geometry, nonzero HMD anchoring, bad
+  visibility/association/reprojection, matched-time history and generation loss.
+  Background worker tests verify stale-result removal, disable during a running
+  solve, opt-in logging and the 600-frame cap. Log analysis recomputes residuals.
+- Native headless tests enabled the shadow preview on a labeled synthetic camera,
+  displayed seven body candidates and a known 3 cm hip difference, and started,
+  stopped and exported a pose log. The CLI report reproduced the known difference;
+  unavailable raw baselines remained null. This was not headset hardware evidence.
+- The official MediaPipe image also passed through the production estimator and
+  shadow solver with nominal lens values and a synthetic headset reference:
+  seven candidates, approximately 7.16 px reprojection RMS. This demonstrates
+  pipeline compatibility only; no real spatial calibration was used.
+- Lens import tests cover exported-profile roundtrip, invalid geometry, false
+  validation metadata and busy-state protection. A native file-picker check
+  imported a changed fixture profile through the Qt bridge and verified its
+  recomputed held-out RMS in the service. The stdlib-only suite also
+  passes, skipping camera-extra tests when those libraries are unavailable.
 
 Earlier web-console checks covered desktop/mobile layout, assisted and
 camera-only simulation, occlusion, and front/side debug views.

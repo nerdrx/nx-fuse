@@ -293,6 +293,17 @@ class CameraManager:
                     'sequence': stream.sequence, 'epoch': str(stream.epoch),
                     'image_size': stream.image_size}
 
+    def estimate_snapshot(self, device_id):
+        """Return matched estimate metadata without borrowing the capture thread."""
+        with self._lock:
+            stream = self._streams.get(device_id)
+            if (not stream or stream.stop.is_set() or stream.error or not stream.estimation
+                    or not stream.estimate or time.monotonic() - stream.last_frame > .5):
+                raise ValueError('Waiting for one fresh, unique body estimate')
+            return {'estimate': stream.estimate, 'time_ns': round(stream.last_frame * 1e9),
+                    'sequence': stream.estimate_sequence, 'epoch': str(stream.epoch),
+                    'image_size': stream.image_size}
+
     def set_estimation(self, device_id: str, enabled: bool) -> dict:
         with self._lock:
             stream = self._streams.get(device_id)

@@ -19,7 +19,9 @@ The native dashboard, optional camera pose observation, lens-calibration tools
 and a read-only WiVRn packet tap are implemented. Synthetic fusion remains
 separate from camera and tracker observations. Native camera-to-VR alignment now matches manually selected headset/controller
 references to stationary tracked poses, with held-out reprojection checks.
-No measured tracking improvement or live correction is claimed. See `VALIDATION.md` for functional checks and
+A read-only shadow preview now reconstructs model-inferred body candidates and
+compares them with nearest-time tracker samples. Pose logs support subsequent
+analysis. No measured tracking improvement or live correction is claimed. See `VALIDATION.md` for functional checks and
 `TRACKING-TAP.md` for the read-only transport.
 
 ## Architecture

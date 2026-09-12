@@ -13,6 +13,7 @@ from fusion import Fusion, Observation, camera_only
 from camera import CameraManager, enumerate_devices
 from lens_setup import LensSetup
 from alignment_setup import AlignmentSetup
+from shadow_session import ShadowSession
 
 ROOT = Path(__file__).resolve().parent
 
@@ -33,6 +34,7 @@ class Simulation:
         self.tracking_receiver = tracking_receiver
         self.lens_setup = LensSetup()
         self.alignment_setup = AlignmentSetup(self.camera_manager, self.lens_setup, tracking_receiver)
+        self.shadow_session = ShadowSession(self.camera_manager, self.lens_setup, self.alignment_setup, tracking_receiver)
 
     def tick(self):
         now = time.monotonic()
@@ -101,6 +103,10 @@ def make_handler(sim):
             if self.path == '/api/tracking':
                 return self.send(200, sim.tracking_receiver.snapshot() if sim.tracking_receiver else
                                  {'enabled':False, 'connected':False, 'read_only':True, 'records':[]})
+            if self.path == '/api/shadow/recording':
+                return self.send(200, sim.shadow_session.recording(), filename='nx-fuse-shadow.json')
+            if self.path == '/api/shadow':
+                return self.send(200, sim.shadow_session.snapshot())
             if self.path == '/api/alignment':
                 return self.send(200, sim.alignment_setup.snapshot())
             if self.path == '/api/alignment/profile':
@@ -131,6 +137,36 @@ def make_handler(sim):
         def do_POST(self):
             if not self.allowed():
                 return self.send(403, {'error':'Local requests only'})
+            if self.path == '/api/calibration/profile':
+                try:
+                    size = int(self.headers.get('Content-Length','0'))
+                    if not 0 < size <= 32768: raise ValueError('Lens profile must be at most 32 KiB')
+                    sim.lens_setup.load_profile(json.loads(self.rfile.read(size)))
+                    return self.send(200, {'ok':True})
+                except (ValueError, RuntimeError, KeyError) as exc:
+                    return self.send(400, {'error':str(exc)})
+            if self.path == '/api/shadow/recording':
+                try:
+                    size = int(self.headers.get('Content-Length','0'))
+                    if not 0 < size <= 128: raise ValueError('Invalid request size')
+                    value = json.loads(self.rfile.read(size))
+                    if not isinstance(value,dict) or set(value) != {'action'}:
+                        raise ValueError('Expected recording action')
+                    sim.shadow_session.recording_command(value['action'])
+                    return self.send(200, {'ok':True})
+                except (ValueError, RuntimeError) as exc:
+                    return self.send(400, {'error':str(exc)})
+            if self.path == '/api/shadow':
+                try:
+                    size = int(self.headers.get('Content-Length','0'))
+                    if not 0 < size <= 1024: raise ValueError('Invalid request size')
+                    value = json.loads(self.rfile.read(size))
+                    if not isinstance(value,dict) or set(value) != {'enabled','id'}:
+                        raise ValueError('Expected id and boolean enabled')
+                    sim.shadow_session.set_enabled(value['id'],value['enabled'])
+                    return self.send(200, {'ok':True})
+                except (ValueError, RuntimeError, KeyError) as exc:
+                    return self.send(400, {'error':str(exc)})
             if self.path in ('/api/calibration', '/api/alignment'):
                 try:
                     size = int(self.headers.get('Content-Length', '0'))
@@ -225,6 +261,7 @@ def main():
         pass
     finally:
         stop.set()
+        sim.shadow_session.close()
         sim.camera_manager.close()
         if receiver: receiver.close()
         server.server_close()

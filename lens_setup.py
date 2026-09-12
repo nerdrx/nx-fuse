@@ -1,5 +1,7 @@
 """In-memory, explicit chessboard collection for the native setup page."""
 from dataclasses import asdict
+import json
+import math
 import threading
 
 
@@ -13,6 +15,83 @@ class LensSetup:
         self._busy = False
         self._error = ''
         self._profile = None
+
+    @staticmethod
+    def _numbers(value, name, length=None):
+        if not isinstance(value, (list, tuple)) or (length is not None and len(value) != length):
+            raise ValueError(f'{name} has invalid shape')
+        if any(type(x) not in (int, float) or not math.isfinite(x) for x in value):
+            raise ValueError(f'{name} must contain finite numbers')
+        return tuple(float(x) for x in value)
+
+    def load_profile(self, value):
+        """Validate and load exported lens geometry; ignore calibration metadata."""
+        try:
+            if len(json.dumps(value, separators=(',', ':'))) > 32768:
+                raise ValueError('Lens profile exceeds 32 KiB')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('Lens profile must be a JSON object') from exc
+        if not isinstance(value, dict):
+            raise ValueError('Lens profile must be a JSON object')
+        required = {'camera_id', 'image_size', 'camera_matrix', 'distortion', 'rms_error',
+                    'train_errors', 'held_out_errors', 'train_indices', 'held_out_indices'}
+        known = required | {'held_out_rms_px', 'scope', 'validated'}
+        if set(value) - known or not required <= set(value):
+            raise ValueError('Lens profile contains unknown or missing fields')
+        camera_id = value['camera_id']
+        if not isinstance(camera_id, str) or not camera_id.strip() or len(camera_id) >= 256:
+            raise ValueError('camera_id must be a non-empty string shorter than 256 characters')
+        size = value['image_size']
+        if (not isinstance(size, (list, tuple)) or len(size) != 2
+                or any(type(x) is not int or not 1 <= x <= 8192 for x in size)):
+            raise ValueError('image_size must contain two positive integers <= 8192')
+        width, height = size
+        matrix_values = value['camera_matrix']
+        if (not isinstance(matrix_values, (list, tuple)) or len(matrix_values) != 3
+                or any(not isinstance(row, (list, tuple)) or len(row) != 3 for row in matrix_values)):
+            raise ValueError('camera_matrix must be 3 x 3')
+        matrix = tuple(self._numbers(row, 'camera_matrix', 3) for row in matrix_values)
+        if matrix[0][0] <= 0 or matrix[1][1] <= 0 or matrix[0][0] > width * 20 or matrix[1][1] > height * 20 \
+                or matrix[0][1] != 0 or matrix[1][0] != 0 or matrix[2] != (0.0, 0.0, 1.0) or not (-width <= matrix[0][2] <= 2 * width) \
+                or not (-height <= matrix[1][2] <= 2 * height):
+            raise ValueError('camera_matrix has implausible calibration values')
+        distortion = self._numbers(value['distortion'], 'distortion')
+        if len(distortion) not in (4, 5, 8, 12, 14) or any(abs(x) > 1e6 for x in distortion):
+            raise ValueError('distortion has invalid length or bounds')
+        rms = self._numbers([value['rms_error']], 'rms_error')[0]
+        if rms < 0 or rms > 100:
+            raise ValueError('rms_error exceeds limit')
+        train_errors = self._numbers(value['train_errors'], 'train_errors')
+        held_errors = self._numbers(value['held_out_errors'], 'held_out_errors')
+        train_indices, held_indices = value['train_indices'], value['held_out_indices']
+        if not isinstance(train_indices, (list, tuple)) or not isinstance(held_indices, (list, tuple)):
+            raise ValueError('view indices must be arrays')
+        train_indices, held_indices = tuple(train_indices), tuple(held_indices)
+        if (len(train_errors) < 4 or not held_errors or any(x < 0 or x > 100 for x in train_errors + held_errors)
+                or len(train_errors) != len(train_indices)
+                or len(held_errors) != len(held_indices)):
+            raise ValueError('calibration errors or index lengths are invalid')
+        if (any(type(x) is not int or x < 0 for x in train_indices + held_indices)
+                or len(set(train_indices + held_indices)) != len(train_indices) + len(held_indices)
+                or len(train_indices) + len(held_indices) < 6):
+            raise ValueError('view indices must be unique, disjoint, and contain six views')
+        profile = {
+            'camera_id': camera_id, 'image_size': tuple(size), 'camera_matrix': matrix,
+            'distortion': distortion, 'rms_error': rms, 'train_errors': train_errors,
+            'held_out_errors': held_errors, 'train_indices': tuple(train_indices),
+            'held_out_indices': tuple(held_indices),
+            'held_out_rms_px': math.sqrt(sum(x * x for x in held_errors) / len(held_errors)),
+            'validated': (math.sqrt(sum(x * x for x in held_errors) / len(held_errors)) <= 1
+                          and max(held_errors) <= 2),
+            'scope': 'lens intrinsics only; not camera-to-VR calibration',
+        }
+        with self._lock:
+            if self._busy:
+                raise ValueError('Calibration is busy')
+            self._views.clear()
+            self._camera = camera_id
+            self._profile = profile
+            self._error = ''
 
     def snapshot(self):
         with self._lock:

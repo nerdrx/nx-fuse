@@ -10,8 +10,40 @@ except ImportError:
 from lens_setup import LensSetup
 
 
-@unittest.skipIf(cv2 is None, 'optional camera packages unavailable')
 class LensSetupTests(unittest.TestCase):
+    def profile(self):
+        return {'camera_id': 'saved', 'image_size': [640, 480],
+                'camera_matrix': [[600, 0, 320], [0, 600, 240], [0, 0, 1]],
+                'distortion': [0, 0, 0, 0, 0], 'rms_error': .2,
+                'train_errors': [.2] * 5, 'held_out_errors': [.5],
+                'train_indices': [0, 1, 2, 3, 4], 'held_out_indices': [5],
+                'validated': True, 'held_out_rms_px': 99,
+                'scope': 'ignored'}
+
+    def test_load_profile_roundtrip_and_recomputes_validation(self):
+        setup = LensSetup()
+        setup.load_profile(self.profile())
+        snapshot = setup.snapshot()
+        self.assertEqual(snapshot['camera'], 'saved')
+        self.assertEqual(snapshot['count'], 0)
+        self.assertTrue(snapshot['profile']['validated'])
+        self.assertLess(snapshot['profile']['held_out_rms_px'], 1)
+        self.assertEqual(snapshot['profile']['scope'], 'lens intrinsics only; not camera-to-VR calibration')
+
+    def test_load_profile_rejects_bad_geometry_and_metrics(self):
+        for key, value in [('camera_matrix', [[1, 0, 0], [0, 1, 0], [1, 0, 0]]),
+                           ('distortion', ['0'] * 5), ('rms_error', float('nan'))]:
+            profile = self.profile(); profile[key] = value
+            with self.assertRaises(ValueError): LensSetup().load_profile(profile)
+        profile = self.profile(); profile['held_out_errors'] = [3]
+        loaded = LensSetup(); loaded.load_profile(profile)
+        self.assertFalse(loaded.snapshot()['profile']['validated'])
+
+    def test_load_profile_busy_rejected(self):
+        setup = LensSetup(); setup._busy = True
+        with self.assertRaises(ValueError): setup.load_profile(self.profile())
+
+    @unittest.skipIf(cv2 is None, 'optional camera packages unavailable')
     def test_explicit_collection_solve_and_reset(self):
         setup = LensSetup()
         class Camera:

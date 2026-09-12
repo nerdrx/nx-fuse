@@ -68,7 +68,9 @@ WiVRn so the optional raw-pose feed is ready. The native camera panel now has
 intrinsics/distortion, inspect held-out error and export the profile. These
 tools now lead into [spatial alignment](docs/SPATIAL-ALIGNMENT.md): match a
 visible headset/controller reference to its tracked pose across varied captures.
-Exported camera-to-VR transforms remain separate from live correction.
+The [shadow preview](docs/SHADOW-PREVIEW.md) now places model-inferred body
+candidates into that space, anchors them to the headset, and compares against
+time-matched raw body trackers when available. It never modifies VR output.
 
 ## What works now
 
@@ -86,6 +88,10 @@ Exported camera-to-VR transforms remain separate from live correction.
   protected head/hands, and fallback after observation loss or process gaps.
 - Camera-only simulation with no body-tracker baseline: missing body observations
   become unavailable while simulated headset/controller anchors remain.
+- Read-only anchored body preview, front/side raw comparison, optional pose-only
+  logs and a standard-library diagnostic report. Body trackers are optional; a
+  tracked headset and current camera alignment are required.
+- Saved lens-profile import with validation; spatial alignment stays session-specific.
 - Deterministic JSONL replay and automated tests covering fusion and local API behavior.
 - Read-only WiVRn packet tap and native raw-pose inspector for anchors, BD
   joints and generic HTC trackers; hardware validation is still pending.
@@ -106,7 +112,7 @@ The current one-camera path provides MediaPipe 2D landmarks and hip-relative
 inferred 3D coordinates. Read the sourced [monocular research plan](docs/MONOCULAR.md).
 The estimate is uncalibrated to VR and is not measured camera depth.
 
-Real tracker injection, calibrated monocular body depth, moving-frame time alignment,
+Real tracker injection, measured monocular body accuracy, exposure-latency calibration,
 person association for live correction, and hardware evaluation remain future
 work. The simulation averages already-calibrated positions; it does **not**
 implement the planned latency-aligned residual pipeline. There is no measured

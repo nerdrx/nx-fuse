@@ -174,6 +174,38 @@ class TrackingReceiver:
                 'sample_time_ns': int(nearest['sample_time_ns']),
                 'match_error_ms': abs(nearest['sample_time_ns'] - frame_time_ns) / 1e6}
 
+    def history_snapshot(self, frame_time_ns):
+        """Return nearest tracked positions for one camera-arrival timestamp."""
+        if isinstance(frame_time_ns, bool) or not isinstance(frame_time_ns, numbers.Integral):
+            raise ValueError('invalid frame time')
+        now = time.monotonic_ns()
+        if frame_time_ns > now + 20_000_000 or now - frame_time_ns > 500_000_000:
+            raise ValueError('frame time must be recent')
+        with self._lock:
+            generation = str(self._generation)
+            history = {joint: list(samples) for joint, samples in self._history.items()}
+        records = []
+        for joint, samples in history.items():
+            candidates = [record for record in samples
+                          if abs(record['sample_time_ns'] - frame_time_ns) <= 60_000_000]
+            if not candidates:
+                continue
+            record = min(candidates, key=lambda item: abs(item['sample_time_ns'] - frame_time_ns))
+            if record['flags'] & 0x11 != 0x11 or (joint == 'head' and record['flags'] & 0x22 != 0x22):
+                continue
+            if joint == 'head':
+                q = record['orientation']
+                if not 0.95 <= math.sqrt(sum(value * value for value in q)) <= 1.05:
+                    raise ValueError('missing valid head orientation')
+            copy = {key: value[:] if isinstance(value, list) else value
+                    for key, value in record.items()}
+            copy['match_error_ms'] = abs(record['sample_time_ns'] - frame_time_ns) / 1e6
+            records.append(copy)
+        if not any(record['joint'] == 'head' for record in records):
+            raise ValueError('missing tracked head')
+        return {'generation': generation, 'records': records,
+                'match_error_ms': max(record['match_error_ms'] for record in records)}
+
     def _run(self):
         while not self._stop.is_set():
             try:

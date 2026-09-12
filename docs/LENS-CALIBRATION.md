@@ -55,3 +55,11 @@ GUI frame, or `collect_corners(frames, (cols, rows), square_size)` for a batch,
 then call `calibrate_lens(dataset)`. `square_size` is metres. The calibrator rejects too
 few views, inconsistent dimensions, non-finite data, and views lacking useful
 position/scale diversity.
+
+## Restore a native profile
+
+Use **Load lens profile…** to select a JSON file exported by the native panel.
+The file stays local; geometry, dimensions, errors and view indices are checked.
+The imported validation flag is ignored and the held-out gate is recomputed.
+Loading does not start cameras or restore spatial alignment. Keep the same
+camera/focus/zoom/resolution, or calibrate the lens again.
