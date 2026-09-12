@@ -15,9 +15,14 @@ class Observation:
     timestamp: float  # host monotonic seconds, capture time (not receive time)
 
 
+def number(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
 def vector(value):
     return (isinstance(value, (tuple, list)) and len(value) == 3
-            and all(isinstance(x, (int, float)) and math.isfinite(x) for x in value))
+            and all(number(x) for x in value))
 
 
 def camera_only(observations, now, anchors=None):
@@ -27,17 +32,23 @@ def camera_only(observations, now, anchors=None):
     Head/controller anchors, when supplied, remain authoritative. Orientations
     and monocular depth inference are outside this position-only framework.
     """
-    anchors = anchors or {}
-    if not math.isfinite(now) or any(not vector(p) for p in anchors.values()):
+    if anchors is None:
+        anchors = {}
+    if not number(now) or not isinstance(anchors, dict) or any(not vector(p) for p in anchors.values()):
         raise ValueError('Invalid anchor or time')
     sources = {}
     for o in observations:
-        if (not vector(o.position) or not math.isfinite(o.timestamp)
-                or not math.isfinite(o.confidence) or not .65 <= o.confidence <= 1
-                or not 0 <= now-o.timestamp < .15):
+        try:
+            position, timestamp, confidence = o.position, o.timestamp, o.confidence
+            key = (o.camera, o.joint)
+            hash(key)
+        except (AttributeError, TypeError):
             continue
-        key = (o.camera,o.joint)
-        if key not in sources or o.timestamp > sources[key].timestamp:
+        if (not vector(position) or not number(timestamp)
+                or not number(confidence) or not .65 <= confidence <= 1
+                or not 0 <= now-timestamp < .15):
+            continue
+        if key not in sources or timestamp > sources[key].timestamp:
             sources[key] = o
     result = {}
     for joint in {o.joint for o in sources.values()}:
@@ -70,7 +81,7 @@ class Fusion:
         self.last_time = None
 
     def step(self, baseline, observations, now, enabled=False):
-        if not math.isfinite(now) or any(not vector(p) for p in baseline.values()):
+        if not number(now) or not isinstance(baseline, dict) or any(not vector(p) for p in baseline.values()):
             raise ValueError('Invalid base pose or timestamp')
         if self.last_time is not None and (now < self.last_time or now-self.last_time > .5):
             self.reset()
@@ -84,13 +95,18 @@ class Fusion:
         # Deduplicate each source/joint: repeated frames cannot increase its vote.
         candidates = {}
         for o in observations:
-            if (o.joint not in baseline or o.joint in self.protected or not vector(o.position)
-                    or not math.isfinite(o.timestamp) or not math.isfinite(o.confidence)
-                    or not .65 <= o.confidence <= 1 or not 0 <= now-o.timestamp <= .15
-                    or math.dist(o.position, baseline[o.joint]) > .5):
+            try:
+                joint, position, timestamp, confidence = o.joint, o.position, o.timestamp, o.confidence
+                key = (o.camera, joint)
+                hash(key)
+            except (AttributeError, TypeError):
                 continue
-            key = (o.camera, o.joint)
-            if key not in candidates or o.timestamp > candidates[key].timestamp:
+            if (joint not in baseline or joint in self.protected or not vector(position)
+                    or not number(timestamp) or not number(confidence)
+                    or not .65 <= confidence <= 1 or not 0 <= now-timestamp < .15
+                    or math.dist(position, baseline[joint]) > .5):
+                continue
+            if key not in candidates or timestamp > candidates[key].timestamp:
                 candidates[key] = o
         result = {}
         for joint, base in baseline.items():

@@ -15,6 +15,16 @@ class FusionTests(unittest.TestCase):
     def test_camera_only_rejects_disagreement(self):
         self.assertEqual(camera_only([Observation('a','hip',(-1,1,0),.9,1),Observation('b','hip',(1,1,0),.9,1)],1),{})
 
+    def test_camera_only_skips_malformed_and_nonfinite_samples(self):
+        observations = [None, {'joint': 'hip'},
+                        Observation('bad', 'hip', (0, 1, 0), True, 1),
+                        Observation('nan', 'hip', (0, 1, 0), .9, float('nan')),
+                        Observation('future', 'hip', (0, 1, 0), .9, 2),
+                        Observation('good', 'hip', (.1, 1, 0), .9, 1)]
+        self.assertEqual(camera_only(observations, 1)['hip']['position'], [.1, 1, 0])
+        with self.assertRaises(ValueError):
+            camera_only([], 1, [])
+
     def test_assistance_failover_and_protected_head(self):
         f = Fusion()
         base = {'hip':(0,1,0), 'head':(0,2,0)}
@@ -43,6 +53,14 @@ class FusionTests(unittest.TestCase):
             f = Fusion()
             f.step({'hip':(0,1,0)},[],0,True)
             self.assertEqual(f.step({'hip':(0,1,0)},observations,.01,True)['hip']['fused'],[0,1,0])
+
+    def test_fusion_skips_malformed_camera_fields(self):
+        f = Fusion()
+        observations = [None, Observation([], 'hip', (.1, 1, 0), .9, 0),
+                        Observation('good', 'hip', (.1, 1, 0), .9, 0)]
+        f.step({'hip': (0, 1, 0)}, [], 0, True)
+        out = f.step({'hip': (0, 1, 0)}, observations, .01, True)
+        self.assertGreater(out['hip']['fused'][0], 0)
 
     def test_duplicate_camera_does_not_increase_influence(self):
         f,g = Fusion(),Fusion()

@@ -8,24 +8,24 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from fusion import Fusion, Observation, camera_only
+from camera import CameraManager, enumerate_devices
 
 ROOT = Path(__file__).resolve().parent
 
 
 def cameras():
-    # Linux nodes can be metadata/IR endpoints, not independent cameras.
-    return [{'id': '/dev/'+p.name, 'name': (p/'name').read_text().strip()}
-            for p in sorted(Path('/sys/class/video4linux').glob('video*')) if (p/'name').exists()]
+    return enumerate_devices()
 
 
 class Simulation:
-    def __init__(self):
+    def __init__(self, camera_manager=None):
         self.enabled = False
         self.occluded = False
         self.camera_only = False
         self.fusion = Fusion()
         self.lock = threading.Lock()
         self.state = {}
+        self.camera_manager = camera_manager or CameraManager()
 
     def tick(self):
         now = time.monotonic()
@@ -88,7 +88,12 @@ def make_handler(sim):
                 with sim.lock:
                     return self.send(200, sim.state)
             if self.path == '/api/cameras':
-                return self.send(200, {'devices':cameras()})
+                return self.send(200, {'devices':sim.camera_manager.devices()})
+            if self.path.startswith('/api/camera/frame'):
+                from urllib.parse import parse_qs, urlparse
+                device_id = parse_qs(urlparse(self.path).query).get('id', [None])[0]
+                frame = sim.camera_manager.frame(device_id) if device_id else None
+                return self.send(200, frame, 'image/jpeg') if frame else self.send(404, {'error':'No latest frame'})
             if self.path in ('/', '/index.html'):
                 return self.send(200, (ROOT/'web/index.html').read_bytes(), 'text/html; charset=utf-8')
             self.send(404, {'error':'Not found'})
@@ -97,6 +102,35 @@ def make_handler(sim):
             if not self.allowed():
                 return self.send(403, {'error':'Local requests only'})
             if self.path != '/api/control':
+                if self.path == '/api/camera/control':
+                    try:
+                        size = int(self.headers.get('Content-Length','0'))
+                        if not 0 < size <= 1024:
+                            raise ValueError('Invalid request size')
+                        value = json.loads(self.rfile.read(size))
+                        if (not isinstance(value, dict) or set(value) != {'id','enabled'}
+                                or not isinstance(value['id'], str) or type(value['enabled']) is not bool):
+                            raise ValueError('Expected id and boolean enabled')
+                        status = sim.camera_manager.set_enabled(value['id'], value['enabled'])
+                        return self.send(200, {'ok':True, 'device':status})
+                    except KeyError:
+                        return self.send(404, {'error':'Unknown camera'})
+                    except (ValueError, UnicodeDecodeError, RuntimeError) as exc:
+                        return self.send(503 if isinstance(exc, RuntimeError) else 400, {'error':str(exc)})
+                if self.path == '/api/camera/estimation':
+                    try:
+                        size = int(self.headers.get('Content-Length','0'))
+                        if not 0 < size <= 1024: raise ValueError('Invalid request size')
+                        value = json.loads(self.rfile.read(size))
+                        if (not isinstance(value, dict) or set(value) != {'id','enabled'}
+                                or not isinstance(value['id'], str) or type(value['enabled']) is not bool):
+                            raise ValueError('Expected id and boolean enabled')
+                        status = sim.camera_manager.set_estimation(value['id'], value['enabled'])
+                        return self.send(200, {'ok':True, 'device':status})
+                    except KeyError:
+                        return self.send(404, {'error':'Unknown camera'})
+                    except (ValueError, UnicodeDecodeError, RuntimeError) as exc:
+                        return self.send(503 if isinstance(exc, RuntimeError) else 400, {'error':str(exc)})
                 return self.send(404, {'error':'Not found'})
             try:
                 size = int(self.headers.get('Content-Length','0'))
@@ -137,6 +171,7 @@ def main():
         pass
     finally:
         stop.set()
+        sim.camera_manager.close()
         server.server_close()
         thread.join()
 

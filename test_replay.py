@@ -18,3 +18,7 @@ class ReplayTests(unittest.TestCase):
     def test_malformed_frame_reports_line(self):
         with self.assertRaisesRegex(ValueError,'line 1'):
             list(replay(['{"enabled":"true"}']))
+
+    def test_nonfinite_frame_reports_line(self):
+        with self.assertRaisesRegex(ValueError, 'line 1'):
+            list(replay(['{"time":NaN,"baseline":{"hip":[0,1,0]}}']))

@@ -6,16 +6,16 @@
 
 Camera-assisted Pico full-body tracking research for WiVRn NX.
 
-[Project website](https://nerdrx.github.io/nx-fuse/) · [Build plan](docs/PLAN.md) · [WiVRn integration map](docs/WIVRN-INTEGRATION.md)
+[Project website](https://nerdrx.github.io/nx-fuse/) · [Native WiVRn NX dashboard](https://github.com/nerdrx/wivrn-nx/tree/nx-patches) · [Dashboard guide](https://github.com/nerdrx/wivrn-nx/blob/nx-patches/docs/NX-DASHBOARD.md) · [Build plan](docs/PLAN.md)
 
-**Research framework · working simulation · no live tracking adapter yet**
+**Research framework · native dashboard · opt-in camera capture and estimation**
 
 </div>
 
-![NX Fuse simulation console](docs/console.png)
+![NX Fuse native WiVRn NX dashboard](docs/native-dashboard.png)
 
-*Synthetic Pico and camera observations, shown in the local console. This is
-a simulation screenshot, not evidence of camera or headset tracking quality.*
+*Native Qt/Kirigami Body Tracking preview. The VR comparison shows synthetic
+poses; cameras are stopped. This is not a tracking-quality measurement.*
 
 ## The idea
 
@@ -27,8 +27,9 @@ authoritative.
 
 ## Run the framework
 
-Python 3.10+; no third-party runtime packages. Linux enables camera-device
-discovery. Other platforms can run the simulation without discovery.
+Python 3.10+; simulation has no third-party runtime packages. Linux enables
+camera-device discovery. Optional live capture and MediaPipe estimation use the
+isolated setup in [CAMERA-SETUP.md](docs/CAMERA-SETUP.md).
 
 ```sh
 git clone https://github.com/nerdrx/nx-fuse.git
@@ -44,15 +45,30 @@ fade. Assistance starts off. Switching assistance off is an immediate baseline
 bypass; ordinary observation loss fades, with a hard 0.5-second expiry from
 the last accepted capture. These are provisional simulation policies.
 
-The application binds only to loopback. It does not open cameras, record
-images, connect to WiVRn, or modify your installed headset software.
+The application binds only to loopback. Discovery does not open cameras. The
+native WiVRn NX dashboard is built separately in the linked dashboard project;
+it provides the local Body Tracking page and keeps VR output outside this
+simulation service.
+
+The debug capture API opens a selected device only after explicit
+`POST /api/camera/control` with `{"id":"/dev/video0","enabled":true}`;
+`false` stops it. `GET /api/camera/frame?id=...` returns only the bounded latest
+JPEG. Optional MediaPipe estimation adds a 2D landmark overlay and hip-relative
+model-inferred 3D coordinates. Those coordinates are uncalibrated and are not
+VR-space depth. It does not record images, inject poses into WiVRn, or modify
+headset software.
 Video-device entries may include multiple endpoints from the same camera;
 discovery does not establish how many simultaneous usable feeds exist.
 
 ## What works now
 
 - Responsive violet/cyan console with front/side skeleton comparison,
-  assistance and occlusion controls, and Linux video-device discovery.
+  assistance and occlusion controls, Linux video-device discovery, and an
+  explicit camera capture path.
+- Native WiVRn NX dashboard available in the linked project, with a Body
+  Tracking page for local camera discovery and opt-in capture.
+- Camera frames can show a MediaPipe 2D landmark overlay plus hip-relative
+  inferred 3D landmarks; this is a camera observation tool, not calibrated VR tracking.
 - Debug panels show the synthetic camera projection and an observation inspector
   with joint Z, confidence, age and input availability, separate from final poses.
 - Position-only fusion with per-joint confidence, freshness checks, bounded
@@ -60,7 +76,7 @@ discovery does not establish how many simultaneous usable feeds exist.
   protected head/hands, and fallback after observation loss or process gaps.
 - Camera-only simulation with no body-tracker baseline: missing body observations
   become unavailable while simulated headset/controller anchors remain.
-- Deterministic JSONL replay and ten tests covering fusion and local API behavior.
+- Deterministic JSONL replay and automated tests covering fusion and local API behavior.
 - Source-inspected WiVRn integration plan covering both BD skeleton/virtual
   trackers and HTC generic trackers.
 
@@ -74,16 +90,15 @@ the only hardware currently available for evaluation. Other IMU or optical
 tracker systems are future adapter candidates, not supported integrations.
 See [tracker compatibility](docs/TRACKERS.md) for the contract and test gates.
 The **Camera-only simulation** switch demonstrates the no-body-tracker path.
-One-camera 3D depth estimation is an explicit implementation target, using
-learned pose and calibrated headset/body constraints. Read the sourced
-[monocular research plan](docs/MONOCULAR.md). Depth inference itself is not
-implemented yet; both console modes use synthetic 3D observations.
+The current one-camera path provides MediaPipe 2D landmarks and hip-relative
+inferred 3D coordinates. Read the sourced [monocular research plan](docs/MONOCULAR.md).
+The estimate is uncalibrated to VR and is not measured camera depth.
 
-Real camera capture and pose estimation, person association, camera-to-VR
-calibration, historical time alignment, a WiVRn pose tap and correction
-adapter, and hardware evaluation. The simulation averages already-calibrated
-positions; it does **not** implement the planned latency-aligned residual
-pipeline. There is no measured tracking improvement yet.
+Real tracker injection, camera-to-VR calibration, historical time alignment,
+person association for live correction, and hardware evaluation remain future
+work. The simulation averages already-calibrated positions; it does **not**
+implement the planned latency-aligned residual pipeline. There is no measured
+tracking improvement yet.
 
 Read the [milestones and acceptance gates](docs/PLAN.md) before enabling live
 output. The first live milestone is a read-only baseline tap in an isolated
