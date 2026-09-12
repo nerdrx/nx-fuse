@@ -69,6 +69,13 @@ original orientation flags, and do not mark invalid Pico orientation valid
 because a camera sees a foot. The BD aggregate `all_tracked` and the current
 `is_active = true` implementation are not reliable per-joint confidence.
 
+Camera-only is a separate opt-in path: no incoming body device may exist at
+all. The adapter must deliberately register a body/virtual-tracker output set
+and populate only valid estimated roles, preserving headset/controller devices.
+Never assume the BD receive callback will run without body trackers. On camera
+loss, mark body outputs unavailable rather than substituting nonexistent Pico
+poses. Device creation and invalidation require their own live integration test.
+
 ## Time and space contract
 
 Use host monotonic time throughout the worker. The adapter uses WiVRn's

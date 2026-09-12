@@ -5,6 +5,13 @@
 Improve visible hip, knee and foot positions using room cameras, while
 retaining Pico continuity and WiVRn NX's headset/controller tracking.
 Support one camera first, then independent room and overhead-bed cameras.
+Keep the fusion core tracker-neutral; Pico is the first hardware validation
+target. Other tracker adapters remain untested candidates until verified on
+their own hardware. See `TRACKERS.md` for normalization and acceptance rules.
+Support an explicit camera-only mode without body trackers. One RGB camera
+is a required design target through monocular 3D estimation; additional
+cameras improve coverage/geometry. See `MONOCULAR.md` for candidate research,
+calibration, headset anchoring, unavailable-joint behavior and acceptance gates.
 Deliver a clear, attractive dashboard that shows when assistance is real,
 why a joint fell back, and how to return to Pico instantly.
 
@@ -105,6 +112,26 @@ camera setup and calibration, a diagnostics drawer, and one clear disable
 control. Never show a green connected headset from synthetic data. Do not
 hide errors in color alone; controls need visible focus, labels and
 keyboard access. No camera should start or record merely by opening the UI.
+
+### Camera and estimation debug views
+
+The framework debug panels show synthetic camera observations separately from
+final poses, with joint position/depth, confidence and sample age. They are not
+real video or model output. The real capture milestone must replace this with:
+
+- A selectable preview for each camera with 2D keypoints, body bounding region,
+  association identity and rejected/occluded landmarks over the actual image.
+- A separate estimated 3D body view, labeled as inferred depth, alongside raw
+  tracker and final fused skeletons. Keep camera coordinates distinct from VR
+  coordinates and show the calibration transform/version.
+- A per-joint inspector: source camera, observation age, detector confidence,
+  geometric/depth uncertainty, raw position, correction, final position and
+  explicit acceptance/rejection reason. Confidence is not accuracy.
+- Pause/scrub for opted-in recordings; freezing the debug display must never
+  freeze or replay live VR output. Pose-only logging by default, image recording
+  only when deliberately enabled. Debug work stays outside tracking callbacks.
+- Pop-out or separate-window views later if useful during calibration; native
+  browser tabs already allow the current console to be placed on another screen.
 
 ## Open research risks
 

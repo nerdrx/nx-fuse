@@ -53,14 +53,31 @@ discovery does not establish how many simultaneous usable feeds exist.
 
 - Responsive violet/cyan console with front/side skeleton comparison,
   assistance and occlusion controls, and Linux video-device discovery.
+- Debug panels show the synthetic camera projection and an observation inspector
+  with joint Z, confidence, age and input availability, separate from final poses.
 - Position-only fusion with per-joint confidence, freshness checks, bounded
   camera influence, disagreement rejection, duplicate-source suppression,
   protected head/hands, and fallback after observation loss or process gaps.
-- Deterministic JSONL replay and eight tests covering fusion and local API behavior.
+- Camera-only simulation with no body-tracker baseline: missing body observations
+  become unavailable while simulated headset/controller anchors remain.
+- Deterministic JSONL replay and ten tests covering fusion and local API behavior.
 - Source-inspected WiVRn integration plan covering both BD skeleton/virtual
   trackers and HTC generic trackers.
 
 ## What remains
+
+### Other trackers and no body trackers
+
+The fusion core accepts named baseline joint positions without depending on a
+tracker SDK. Pico through WiVRn NX is the first planned hardware adapter and
+the only hardware currently available for evaluation. Other IMU or optical
+tracker systems are future adapter candidates, not supported integrations.
+See [tracker compatibility](docs/TRACKERS.md) for the contract and test gates.
+The **Camera-only simulation** switch demonstrates the no-body-tracker path.
+One-camera 3D depth estimation is an explicit implementation target, using
+learned pose and calibrated headset/body constraints. Read the sourced
+[monocular research plan](docs/MONOCULAR.md). Depth inference itself is not
+implemented yet; both console modes use synthetic 3D observations.
 
 Real camera capture and pose estimation, person association, camera-to-VR
 calibration, historical time alignment, a WiVRn pose tap and correction
@@ -83,7 +100,7 @@ Each input line is one frame. All positions must already be metres in the
 same calibrated tracking space; all times must share one monotonic clock:
 
 ```json
-{"time":1.0,"enabled":true,"pico":{"hip":[0,1,0]},"observations":[{"camera":"room","joint":"hip","position":[0.1,1,0],"confidence":0.9,"timestamp":0.98}]}
+{"time":1.0,"enabled":true,"baseline":{"hip":[0,1,0]},"observations":[{"camera":"room","joint":"hip","position":[0.1,1,0],"confidence":0.9,"timestamp":0.98}]}
 ```
 
 Submit successive frames to see blending; the first frame initializes time

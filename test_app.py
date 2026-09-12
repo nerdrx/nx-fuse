@@ -29,6 +29,10 @@ class AppTests(unittest.TestCase):
             state=json.loads(client.getresponse().read())
             self.assertTrue(state['enabled'])
             self.assertEqual(state['mode'],'simulation')
+            client.request('POST','/api/control',json.dumps({'camera_only':True,'occluded':True}))
+            self.assertEqual(client.getresponse().status,200)
+            self.assertEqual(set(sim.state['joints']),{'head','left_hand','right_hand'})
+            self.assertTrue(sim.state['camera_only'])
         finally:
             client.close()
             server.shutdown()

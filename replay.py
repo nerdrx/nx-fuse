@@ -1,6 +1,6 @@
 """Replay calibrated synthetic/recorded poses: python3 replay.py input.jsonl.
 
-Each line: {time: seconds, pico: {joint: [x,y,z]}, observations: [{camera,
+Each line: {time: seconds, baseline: {joint: [x,y,z]}, observations: [{camera,
 joint, position: [x,y,z], confidence: 0..1, timestamp: seconds}], enabled: bool}.
 All positions are metres in one shared space. This does not calibrate inputs.
 """
@@ -17,7 +17,7 @@ def replay(lines):
             if type(frame.get('enabled', False)) is not bool:
                 raise ValueError('enabled must be boolean')
             observations = [Observation(**value) for value in frame.get('observations', [])]
-            yield {'time':frame['time'], 'joints':fusion.step(frame['pico'], observations,frame['time'],frame.get('enabled',False))}
+            yield {'time':frame['time'], 'joints':fusion.step(frame.get('baseline', frame.get('pico')), observations,frame['time'],frame.get('enabled',False))}
         except (ValueError, TypeError, KeyError, AttributeError) as exc:
             raise ValueError(f'Invalid frame at line {number}: {exc}') from exc
 

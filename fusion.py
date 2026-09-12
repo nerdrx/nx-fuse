@@ -20,6 +20,38 @@ def vector(value):
             and all(isinstance(x, (int, float)) and math.isfinite(x) for x in value))
 
 
+def camera_only(observations, now, anchors=None):
+    """Fuse already-calibrated camera positions without body trackers.
+
+    Missing/rejected joints are absent, not tracked at their previous position.
+    Head/controller anchors, when supplied, remain authoritative. Orientations
+    and monocular depth inference are outside this position-only framework.
+    """
+    anchors = anchors or {}
+    if not math.isfinite(now) or any(not vector(p) for p in anchors.values()):
+        raise ValueError('Invalid anchor or time')
+    sources = {}
+    for o in observations:
+        if (not vector(o.position) or not math.isfinite(o.timestamp)
+                or not math.isfinite(o.confidence) or not .65 <= o.confidence <= 1
+                or not 0 <= now-o.timestamp < .15):
+            continue
+        key = (o.camera,o.joint)
+        if key not in sources or o.timestamp > sources[key].timestamp:
+            sources[key] = o
+    result = {}
+    for joint in {o.joint for o in sources.values()}:
+        obs = [o for o in sources.values() if o.joint == joint]
+        if any(math.dist(a.position,b.position) > .2 for a in obs for b in obs):
+            continue
+        scores = [o.confidence*(1-(now-o.timestamp)/.15) for o in obs]
+        result[joint] = {'position':[sum(o.position[i]*s for o,s in zip(obs,scores))/sum(scores) for i in range(3)],
+                         'confidence':max(scores), 'source':'camera'}
+    for joint,position in anchors.items():
+        result[joint] = {'position':list(position),'confidence':1.,'source':'anchor'}
+    return result
+
+
 class Fusion:
     """Bounded correction with stale rejection and gradual release.
 
@@ -37,8 +69,8 @@ class Fusion:
         self.last_observed = {}
         self.last_time = None
 
-    def step(self, pico, observations, now, enabled=False):
-        if not math.isfinite(now) or any(not vector(p) for p in pico.values()):
+    def step(self, baseline, observations, now, enabled=False):
+        if not math.isfinite(now) or any(not vector(p) for p in baseline.values()):
             raise ValueError('Invalid base pose or timestamp')
         if self.last_time is not None and (now < self.last_time or now-self.last_time > .5):
             self.reset()
@@ -48,20 +80,20 @@ class Fusion:
             self.corrections.clear()
             self.weights.clear()
             self.last_observed.clear()
-            return {j: {'pico': list(p), 'fused': list(p), 'weight': 0.0} for j, p in pico.items()}
+            return {j: {'baseline': list(p), 'fused': list(p), 'weight': 0.0} for j, p in baseline.items()}
         # Deduplicate each source/joint: repeated frames cannot increase its vote.
         candidates = {}
         for o in observations:
-            if (o.joint not in pico or o.joint in self.protected or not vector(o.position)
+            if (o.joint not in baseline or o.joint in self.protected or not vector(o.position)
                     or not math.isfinite(o.timestamp) or not math.isfinite(o.confidence)
                     or not .65 <= o.confidence <= 1 or not 0 <= now-o.timestamp <= .15
-                    or math.dist(o.position, pico[o.joint]) > .5):
+                    or math.dist(o.position, baseline[o.joint]) > .5):
                 continue
             key = (o.camera, o.joint)
             if key not in candidates or o.timestamp > candidates[key].timestamp:
                 candidates[key] = o
         result = {}
-        for joint, base in pico.items():
+        for joint, base in baseline.items():
             obs = [o for o in candidates.values() if o.joint == joint]
             # Disagreement is uncertainty: refuse all corrections for this joint.
             if any(math.dist(a.position, b.position) > .2 for a in obs for b in obs):
@@ -84,8 +116,8 @@ class Fusion:
             self.weights[joint] = self.weights.get(joint, 0)+(weight-self.weights.get(joint, 0))*alpha
             if expired:
                 self.weights[joint] = 0.
-            result[joint] = {'pico': list(base), 'fused': [a+b for a,b in zip(base,correction)], 'weight': self.weights[joint]}
-        for joint in set(self.corrections)-set(pico):
+            result[joint] = {'baseline': list(base), 'fused': [a+b for a,b in zip(base,correction)], 'weight': self.weights[joint]}
+        for joint in set(self.corrections)-set(baseline):
             self.corrections.pop(joint, None)
             self.weights.pop(joint, None)
             self.last_observed.pop(joint, None)

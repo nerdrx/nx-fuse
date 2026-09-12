@@ -7,7 +7,7 @@ from pathlib import Path
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from fusion import Fusion, Observation
+from fusion import Fusion, Observation, camera_only
 
 ROOT = Path(__file__).resolve().parent
 
@@ -22,6 +22,7 @@ class Simulation:
     def __init__(self):
         self.enabled = False
         self.occluded = False
+        self.camera_only = False
         self.fusion = Fusion()
         self.lock = threading.Lock()
         self.state = {}
@@ -40,8 +41,21 @@ class Simulation:
             x,y,z = base[joint]
             base[joint] = (x+.075*math.sin(now*2), y, z+.045*math.cos(now))
         obs = [] if self.occluded else [Observation('room-demo',j,p,.95,now-.025) for j,p in clean.items()]
+        if self.camera_only:
+            self.fusion.reset()
+            anchors = {j:base[j] for j in Fusion.protected}
+            poses = camera_only(obs,now,anchors)
+            fused = {j:{'fused':p['position'], 'weight':p['confidence'] if p['source']=='camera' else 0.}
+                     for j,p in poses.items()}
+        else:
+            fused = self.fusion.step(base,obs,now,self.enabled)
+            for joint in fused.values():
+                joint["pico"] = joint.pop("baseline")  # simulator display label only
         self.state = {'time':now, 'enabled':self.enabled, 'occluded':self.occluded,
-                      'mode':'simulation', 'joints':self.fusion.step(base,obs,now,self.enabled),
+                      'camera_only':self.camera_only,
+                      'observations':[{'camera':o.camera,'joint':o.joint,'position':o.position,
+                                       'confidence':o.confidence,'timestamp':o.timestamp} for o in obs],
+                      'mode':'simulation', 'joints':fused,
                       'cameras':[{'id':'room-demo','label':'Room · simulated', 'status':'occluded' if self.occluded else 'synthetic'},
                                  {'id':'bed-demo','label':'Bed · planned','status':'not connected'}]}
 
@@ -90,15 +104,15 @@ def make_handler(sim):
                     raise ValueError('Invalid request size')
                 value = json.loads(self.rfile.read(size))
                 if (not isinstance(value, dict) or not value
-                        or set(value)-{'enabled','occluded'} or any(type(v) is not bool for v in value.values())):
-                    raise ValueError('Expected enabled/occluded boolean values')
+                        or set(value)-{'enabled','occluded','camera_only'} or any(type(v) is not bool for v in value.values())):
+                    raise ValueError('Expected boolean controls')
                 with sim.lock:
                     for k,v in value.items():
                         setattr(sim,k,v)
                     sim.tick()
                 self.send(200, {'ok':True})
             except (ValueError, UnicodeDecodeError):
-                self.send(400, {'error':'Expected enabled/occluded booleans, at most 1024 bytes'})
+                self.send(400, {'error':'Expected enabled/occluded/camera_only booleans, at most 1024 bytes'})
     return Handler
 
 

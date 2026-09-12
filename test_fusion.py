@@ -1,9 +1,20 @@
 import math
 import unittest
-from fusion import Fusion, Observation
+from fusion import Fusion, Observation, camera_only
 
 
 class FusionTests(unittest.TestCase):
+    def test_camera_only_without_any_body_trackers(self):
+        obs=[Observation('room','hip',(0,1,0),.9,1),Observation('room','head',(1,2,0),.9,1)]
+        out=camera_only(obs,1,{'head':(0,2,0)})
+        self.assertEqual(out['hip']['position'],[0,1,0])
+        self.assertEqual(out['head']['position'],[0,2,0])
+        self.assertEqual(camera_only(obs,2),{})
+        self.assertEqual(camera_only([],2,{'head':(0,2,0)}),{'head':{'position':[0,2,0],'confidence':1.,'source':'anchor'}})
+
+    def test_camera_only_rejects_disagreement(self):
+        self.assertEqual(camera_only([Observation('a','hip',(-1,1,0),.9,1),Observation('b','hip',(1,1,0),.9,1)],1),{})
+
     def test_assistance_failover_and_protected_head(self):
         f = Fusion()
         base = {'hip':(0,1,0), 'head':(0,2,0)}

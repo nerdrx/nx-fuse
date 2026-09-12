@@ -9,7 +9,7 @@ class ReplayTests(unittest.TestCase):
         for i in range(90):
             now=i/60
             obs=[{'camera':'room','joint':'hip','position':[.2,1,0],'confidence':.95,'timestamp':now}] if i<60 else []
-            lines.append(json.dumps({'time':now,'pico':{'hip':[0,1,0]},'observations':obs,'enabled':True}))
+            lines.append(json.dumps({'time':now,'baseline':{'hip':[0,1,0]},'observations':obs,'enabled':True}))
         first=list(replay(lines))
         self.assertEqual(first,list(replay(lines)))
         self.assertGreater(first[59]['joints']['hip']['fused'][0], .15)
