@@ -60,6 +60,14 @@ headset software.
 Video-device entries may include multiple endpoints from the same camera;
 discovery does not establish how many simultaneous usable feeds exist.
 
+## Continue in the native tracking lab
+
+The [tracking lab guide](docs/TRACKING-TAP.md) launches the worker before
+WiVRn so the optional raw-pose feed is ready. The native camera panel now has
+[lens setup](docs/LENS-CALIBRATION.md): collect varied chessboard views, solve
+intrinsics/distortion, inspect held-out error and export the profile. These
+steps do not yet align the camera to VR or apply live corrections.
+
 ## What works now
 
 - Responsive violet/cyan console with front/side skeleton comparison,
@@ -77,8 +85,9 @@ discovery does not establish how many simultaneous usable feeds exist.
 - Camera-only simulation with no body-tracker baseline: missing body observations
   become unavailable while simulated headset/controller anchors remain.
 - Deterministic JSONL replay and automated tests covering fusion and local API behavior.
-- Source-inspected WiVRn integration plan covering both BD skeleton/virtual
-  trackers and HTC generic trackers.
+- Read-only WiVRn packet tap and native raw-pose inspector for anchors, BD
+  joints and generic HTC trackers; hardware validation is still pending.
+- Native chessboard lens setup with held-out reprojection checks and profile export.
 
 ## What remains
 
@@ -101,8 +110,8 @@ implement the planned latency-aligned residual pipeline. There is no measured
 tracking improvement yet.
 
 Read the [milestones and acceptance gates](docs/PLAN.md) before enabling live
-output. The first live milestone is a read-only baseline tap in an isolated
-WiVRn worktree. No changes have been made to WiVRn by this framework.
+output. The next hardware milestone is validating the read-only tap in the
+linked WiVRn NX build before camera-to-VR alignment and shadow correction.
 
 ## Develop and replay
 

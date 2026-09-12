@@ -3,7 +3,7 @@
 Performed 2026-09-12 on the development Linux host. These are functional
 checks, not evidence of improved tracking accuracy or VR performance.
 
-- Python suite: 29 checks pass in the camera environment. Fusion/replay cover
+- Python suite: 37 checks pass in the camera environment. Fusion/replay cover
   stale/future/nonfinite/malformed observations, source disagreement, exact
   fallback expiry, protected head/hands and camera-only missing joints.
 - Fake camera tests cover explicit capture, latest JPEG, duplicate start,
@@ -28,6 +28,18 @@ checks, not evidence of improved tracking accuracy or VR performance.
   simulation and a narrower window. Qt bridge tests covered controls,
   coalescing, external-worker survival, malformed/wrong-mode/oversized replies,
   stalled requests and reconnect recovery using an isolated fake service.
+
+- New lens calibration tests use known camera geometry, varied projected boards,
+  JPEG corner collection, held-out reprojection, duplicate/invalid-view rejection
+  and native workflow reset. No physical chessboard calibration was performed.
+- The read-only WiVRn tap compiles with the server. A real C++ serializer sends
+  fixture datagrams to a Unix socket and the Python decoder checks routes,
+  roles and generations. Conversion/clock helpers are stubbed in this fixture;
+  live clock synchronization remains untested. Receiver tests cover packet
+  rejection, sequence/generation changes, expiry and socket ownership.
+- The tracking-lab launcher test verifies that its owned worker stops and
+  removes its socket when a fake dashboard exits. Native headless inspection
+  displayed an explicitly synthetic tap packet and expanded lens controls.
 
 Earlier web-console checks covered desktop/mobile layout, assisted and
 camera-only simulation, occlusion, and front/side debug views.

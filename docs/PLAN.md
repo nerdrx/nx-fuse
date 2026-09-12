@@ -15,11 +15,12 @@ calibration, headset anchoring, unavailable-joint behavior and acceptance gates.
 Deliver a clear, attractive dashboard that shows when assistance is real,
 why a joint fell back, and how to return to Pico instantly.
 
-This delivery is a development framework and integration plan. Synthetic
-poses and camera registration are not computer vision or live WiVRn
-tracking. No measured tracking improvement, working headset attachment or
-hardware validation is claimed. See `WIVRN-INTEGRATION.md` for the inspected
-source and proposed hooks. The existing WiVRn installation remains intact.
+The native dashboard, optional camera pose observation, lens-calibration tools
+and a read-only WiVRn packet tap are implemented. Synthetic fusion remains
+separate from camera and tracker observations. Lens calibration is not yet a
+camera-to-VR alignment workflow; no measured tracking improvement or live
+correction is claimed. See `VALIDATION.md` for functional checks and
+`TRACKING-TAP.md` for the read-only transport.
 
 ## Architecture
 
@@ -115,9 +116,9 @@ keyboard access. No camera should start or record merely by opening the UI.
 
 ### Camera and estimation debug views
 
-The framework debug panels show synthetic camera observations separately from
-final poses, with joint position/depth, confidence and sample age. They are not
-real video or model output. The real capture milestone must replace this with:
+The native debug window now includes real opt-in camera previews and model
+estimates, separate from synthetic fusion. Lens setup and a raw WiVRn pose
+inspector are available. Remaining debugging and alignment work includes:
 
 - A selectable preview for each camera with 2D keypoints, body bounding region,
   association identity and rejected/occluded landmarks over the actual image.
@@ -152,7 +153,7 @@ real video or model output. The real capture milestone must replace this with:
 
 Read live negotiated body type and tracker roles; inventory connected
 cameras without enabling capture; select one room view and measure its
-latency. Implement a read-only WiVRn pose tap in an isolated worktree, then
-calibrate and run shadow trials. Only apply live corrections after those
+latency. Validate the implemented read-only WiVRn pose tap with the headset, then
+align cameras to VR and run shadow trials. Only apply live corrections after those
 trials show improvement. A useful first demo is one visible hip whose
 position is steadier while its raw Pico fallback survives camera unplugging.

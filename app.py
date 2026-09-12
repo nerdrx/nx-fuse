@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Local NX Fuse simulation console. Does not open cameras or connect to VR."""
+"""Local NX Fuse observation tools and separate simulation; cameras require opt-in."""
 import argparse
 import json
 import math
+import os
+import signal
 from pathlib import Path
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from fusion import Fusion, Observation, camera_only
 from camera import CameraManager, enumerate_devices
+from lens_setup import LensSetup
 
 ROOT = Path(__file__).resolve().parent
 
@@ -18,7 +21,7 @@ def cameras():
 
 
 class Simulation:
-    def __init__(self, camera_manager=None):
+    def __init__(self, camera_manager=None, tracking_receiver=None):
         self.enabled = False
         self.occluded = False
         self.camera_only = False
@@ -26,6 +29,8 @@ class Simulation:
         self.lock = threading.Lock()
         self.state = {}
         self.camera_manager = camera_manager or CameraManager()
+        self.tracking_receiver = tracking_receiver
+        self.lens_setup = LensSetup()
 
     def tick(self):
         now = time.monotonic()
@@ -65,13 +70,15 @@ def make_handler(sim):
         def log_message(self, *args):
             pass
 
-        def send(self, status, value, kind='application/json'):
+        def send(self, status, value, kind='application/json', filename=None):
             data = json.dumps(value).encode() if kind == 'application/json' else value
             self.send_response(status)
             self.send_header('Content-Type', kind)
             self.send_header('Content-Length', str(len(data)))
             self.send_header('Cache-Control', 'no-store')
             self.send_header('X-Content-Type-Options', 'nosniff')
+            if filename:
+                self.send_header('Content-Disposition', 'attachment; filename="'+filename+'"')
             self.end_headers()
             self.wfile.write(data)
 
@@ -89,6 +96,17 @@ def make_handler(sim):
                     return self.send(200, sim.state)
             if self.path == '/api/cameras':
                 return self.send(200, {'devices':sim.camera_manager.devices()})
+            if self.path == '/api/tracking':
+                return self.send(200, sim.tracking_receiver.snapshot() if sim.tracking_receiver else
+                                 {'enabled':False, 'connected':False, 'read_only':True, 'records':[]})
+            if self.path == '/api/calibration':
+                return self.send(200, sim.lens_setup.snapshot())
+            if self.path == '/api/calibration/profile':
+                profile = sim.lens_setup.snapshot()['profile']
+                return self.send(200, profile, filename='nx-fuse-lens-profile.json') if profile else self.send(404, {'error':'No lens profile'})
+            if self.path == '/api/calibration/board':
+                from lens_calibration import calibration_board_svg
+                return self.send(200, calibration_board_svg((9, 6), 25).encode(), 'image/svg+xml')
             if self.path.startswith('/api/camera/frame'):
                 from urllib.parse import parse_qs, urlparse
                 device_id = parse_qs(urlparse(self.path).query).get('id', [None])[0]
@@ -101,6 +119,16 @@ def make_handler(sim):
         def do_POST(self):
             if not self.allowed():
                 return self.send(403, {'error':'Local requests only'})
+            if self.path == '/api/calibration':
+                try:
+                    size = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < size <= 1024: raise ValueError('Invalid request size')
+                    value = json.loads(self.rfile.read(size))
+                    if not isinstance(value, dict): raise ValueError('Expected calibration command')
+                    sim.lens_setup.command(value, sim.camera_manager)
+                    return self.send(200, {'ok':True})
+                except (ValueError, RuntimeError, KeyError) as exc:
+                    return self.send(400, {'error':str(exc)})
             if self.path != '/api/control':
                 if self.path == '/api/camera/control':
                     try:
@@ -153,8 +181,12 @@ def make_handler(sim):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8787)
+    parser.add_argument('--tracking-socket', default=os.environ.get('NX_FUSE_TAP'),
+                        help='Opt-in private Unix socket for read-only WiVRn tracking')
     args = parser.parse_args()
-    sim = Simulation()
+    from tracking import TrackingReceiver
+    receiver = TrackingReceiver(args.tracking_socket) if args.tracking_socket else None
+    sim = Simulation(tracking_receiver=receiver)
     sim.tick()
     stop = threading.Event()
     def update():
@@ -162,8 +194,15 @@ def main():
             with sim.lock:
                 sim.tick()
     thread = threading.Thread(target=update, daemon=True)
-    server = ThreadingHTTPServer(('127.0.0.1',args.port),make_handler(sim))
+    try:
+        server = ThreadingHTTPServer(('127.0.0.1',args.port),make_handler(sim))
+    except Exception:
+        if receiver: receiver.close()
+        raise
     thread.start()
+    def terminate(_signal, _frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, terminate)
     print(f'NX Fuse simulation: http://127.0.0.1:{server.server_port} — no live VR output', flush=True)
     try:
         server.serve_forever()
@@ -172,6 +211,7 @@ def main():
     finally:
         stop.set()
         sim.camera_manager.close()
+        if receiver: receiver.close()
         server.server_close()
         thread.join()
 
